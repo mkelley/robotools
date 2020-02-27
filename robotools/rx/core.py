@@ -37,6 +37,8 @@ def copy_files(source_dir, target_dir, config, logger):
             ccd.meta['OBJECT'] = 'C/2016 M1 (PanSTARRS)'
         elif ccd.meta['OBJECT'] == '2017T1 Heinze':
             ccd.meta['OBJECT'] = 'C/2017 T1 (Heinze)'
+        elif ccd.meta['OBJECT'] == '2019Y1 ATLAS':
+            ccd.meta['OBJECT'] = 'C/2019 Y1 (ATLAS)'
         elif ccd.meta['OBJECT'] == '21P Gia-Zin':
             ccd.meta['OBJECT'] = '21P/Giacobini-Zinner'
         elif ccd.meta['OBJECT'] == '29P Schwas-Wach':
