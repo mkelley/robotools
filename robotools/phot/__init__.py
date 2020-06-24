@@ -1,8 +1,5 @@
 from .core import *
 
-######################################################################
-
-
 def configure():
     import os
     import argparse
@@ -16,9 +13,8 @@ def configure():
     parser = argparse.ArgumentParser(
         description='Measure photometry in Lowell 31-in Robo telescope data.')
     parser.add_argument(
-        'dir', default='.', nargs='?',
-        help=('directory to process, data are in subdirectories '
-              'YYYYMMDD/ppp or ppp'))
+        'path',
+        help='directory to process, data are in a subdirectory labeled ppp')
     parser.add_argument(
         '-f', action='store_true',
         help='force processing of directory')
@@ -57,7 +53,7 @@ def configure():
     args = parser.parse_args()
 
     assert os.path.isdir(
-        args.dir), '"{}" must be an existing directory.'.format(args.dir)
+        args.path), '"{}" must be an existing directory.'.format(args.path)
 
     class config:
         file_template = '[12][0-9][01][0-9][0-3][0-9]*.[0-9][0-9][0-9].fits'
@@ -77,7 +73,7 @@ def configure():
                                 args.reprocess_phot,
                                 args.reprocess_cal))
 
-    config.source_dir = args.dir.strip('/')
+    config.source_dir = args.path.strip('/')
     config.match_limit = args.match_limit * u.arcsec
     config.color_cor_r = args.color_cor_r
     config.mlim = args.mlim
@@ -149,54 +145,40 @@ def main():
 
     warnings.simplefilter("ignore")
 
-    if re.search('20[12][0-9][01][0-9][0-3][0-9]$', config.source_dir):
-        # just one directory to process
-        data_dirs = [os.sep.join((config.source_dir, 'ppp'))]
-    else:
-        # process all directories we can find
-        data_dirs = sorted(glob(
-            os.sep.join((config.source_dir,
-                         '20[12][0-9][01][0-9][0-3][0-9]',
-                         'ppp'))
-        ))
-    db_dir = os.path.abspath(os.sep.join((data_dirs[0], '..', '..')))
+    data_dir = os.sep.join((config.source_dir, 'ppp'))
+    db_dir = './'
 
     with open_database(db_dir, config, logger) as db:
         setup_tables(db)
 
-        for data_dir in data_dirs:
-            if not os.path.isdir(data_dir):
-                continue
+        if not os.path.isdir(data_dir):
+            logger.error('{} is not a directory'.format(data_dir))
+            return
 
-            lock = os.sep.join((data_dir, 'processing'))
-            if os.path.exists(lock) and not config.force_processing:
-                logger.debug('{} has a status of "processing."  Skip.'.format(
-                    data_dir))
-                continue
+        lock = os.sep.join((data_dir, 'processing'))
+        if os.path.exists(lock) and not config.force_processing:
+            logger.debug('{} has a status of "processing."  Skip.'.format(
+                data_dir))
+            return
 
-            with file_lock(lock):
+        with file_lock(lock):
+            try:
+                ic = find_files(data_dir, db, config, logger)
+            except RoboPhotException as e:
+                logger.error(str(e))
+                return
+
+            db.commit()
+
+            for f in ic.files:
                 try:
-                    ic = find_files(data_dir, db, config, logger)
+                    basename = f.replace('.fits', '')
+                    photometry(data_dir, basename, db, config, logger)
+
+                    if config.plot:
+                        plot(data_dir, basename, logger)
+
                 except RoboPhotException as e:
                     logger.error(str(e))
-                    continue
-
-                db.commit()
-
-                for f in ic.files:
-                    try:
-                        basename = f.replace('.fits', '')
-                        photometry(data_dir, basename, db, config, logger)
-
-                        if config.plot:
-                            plot(data_dir, basename, logger)
-
-                    except RoboPhotException as e:
-                        logger.error(str(e))
-                    finally:
-                        db.commit()
-#
-#            try:
-#                night_cal(data_dir, db, config, logger)
-#            except RoboPhotException as e:
-#                logger.error(str(e))
+                finally:
+                    db.commit()
